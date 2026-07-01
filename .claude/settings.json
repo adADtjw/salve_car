@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python -m mpremote ls)",
+      "Bash(python -m mpremote soft_reset)",
+      "Bash(python -m mpremote exec \"import machine; machine.soft_reset\\(\\)\")",
+      "Bash(python -m mpremote cp app_encoder.py :app_encoder.py)",
+      "Bash(git config *)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(curl -I https://github.com)",
+      "Bash(git ls-remote *)",
+      "Bash(netstat -ano)",
+      "Bash(curl -I --connect-timeout 5 https://ghproxy.com)",
+      "Bash(nslookup github.com)",
+      "Bash(ping -n 2 github.com)",
+      "Bash(GIT_TRACE=1 GIT_CURL_VERBOSE=1 git ls-remote origin)",
+      "Bash(curl -I --connect-timeout 10 https://github.com)",
+      "Bash(powershell -Command \"netsh winhttp show proxy\")",
+      "Bash(nslookup api.github.com)",
+      "Bash(test-connection -ComputerName github.com -TcpPort 22 -TimeoutSeconds 5)",
+      "Read(//c/Users/13691/**)",
+      "Read(//c/Users/13691/.ssh/**)",
+      "Bash(powershell -Command \"Test-NetConnection -ComputerName github.com -Port 22 -WarningAction SilentlyContinue | Select-Object -Property TcpTestSucceeded\")",
+      "Bash(ssh-keygen -t ed25519 -C \"1369158376@qq.com\" -f ~/.ssh/id_ed25519 -N \"\")",
+      "Bash(ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>&1; echo \"EXIT:$?\")",
+      "Bash(git remote *)",
+      "Bash(git fetch *)",
+      "Bash(echo \"---EXIT:$?\")",
+      "Bash(git ls-tree *)",
+      "Bash(git push *)",
+      "Bash(python -m py_compile main.py)",
+      "Bash(python -m py_compile controller.py)",
+      "Bash(python -m py_compile app_encoder.py)",
+      "Bash(python -m py_compile app_imu660rx.py)",
+      "Bash(python -m py_compile app_uart.py)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\13691\\.ssh"
+    ]
+  }
+}

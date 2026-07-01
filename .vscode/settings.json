@@ -1,0 +1,22 @@
+{
+    "python.languageServer": "Pylance",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.extraPaths": [
+        ".",
+        "./lib"
+    ],
+    "python.analysis.stubPath": "./lib",
+    "python.autoComplete.extraPaths": [
+        ".",
+        "./lib"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "none",
+        "reportMissingImports": "none",
+        "reportMissingTypeStubs": "none",
+        "reportArgumentType": "none",
+        "reportAttributeAccessIssue": "none",
+        "reportCallIssue": "none"
+    }
+}

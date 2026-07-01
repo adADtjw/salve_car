@@ -1,0 +1,114 @@
+﻿{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "mpy: 检测开发板",
+            "type": "shell",
+            "command": "python .vscode/detect_port.py list",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "mpy: 同步项目文件到 Flash",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action sync",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "mpy: 运行当前文件 (RAM)",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action run -FilePath ${file}",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": true
+            }
+        },
+        {
+            "label": "mpy: 部署并运行 (Flash)",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action deploy -FilePath ${file} -RelativePath ${relativeFile}",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": true
+            }
+        },
+        {
+            "label": "mpy: 上传当前文件到 /flash",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action upload -FilePath ${file} -RelativePath ${relativeFile}",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "mpy: 打开 REPL",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action repl",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "mpy: 复位开发板",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action reset",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "mpy: 列出设备文件",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action ls",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "mpy: 上传 main.py 到 /flash",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File .vscode/run_mpy.ps1 -Action cp-main",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "mpy: 完整部署+运行",
+            "dependsOn": [
+                "mpy: 上传 main.py 到 /flash",
+                "mpy: 复位开发板"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        }
+    ]
+}
