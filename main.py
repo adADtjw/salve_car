@@ -8,12 +8,9 @@ import time
 from machine import Pin
 from smartcar import ticker
 from seekfree import KEY_HANDLER, IMU660RX
-
 from controller import AppController
 from app_imu660rx import Imu660Cal
 from app_uart import Serial, process_received_data
-
-
 # ============================================================================
 # 硬件初始化
 # ============================================================================

@@ -58,11 +58,12 @@ class PositionalPID:
 # 单电机驱动封装 — 含斜坡规划 + 编码器测速 + 速度 PID + 低通滤波
 # ============================================================================
 class MotorNode:
-    def __init__(self, enc_a, enc_b, in1, in2, invert=False):
+    def __init__(self, enc_a, enc_b, in1, in2, invert=False, motor_invert=False):
         # 编码器 (smartcar 库, 自动累加脉冲)
         self.enc = encoder(enc_a, enc_b, invert)
-        self.in1 = in1              # 电机方向引脚
-        self.in2 = in2              # 电机 PWM 引脚
+        self.in1 = in1              # 电机 IN1 方向引脚 (GPIO)
+        self.in2 = in2              # 电机 IN2 调速引脚 (PWM)
+        self.motor_invert = motor_invert  # 电机方向反转 (硬件接线反了时启用)
 
         # 速度 PID: 控制实际 RPM 追上目标 RPM
         self.pid = PositionalPID(kp=0.7, ki=0.02, kd=0, out_max=100)
@@ -116,6 +117,9 @@ class MotorNode:
             return
 
         # ---- 6. 动力输出 ----
+        if self.motor_invert:
+            power = -power
+
         if power >= 0:
             motor.forward(self.in1, self.in2, power)
         else:
@@ -129,7 +133,7 @@ class ChassisController:
     def __init__(self):
         # 三个电机节点: 右轮 / 左轮 / 尾轮
         self.right_node = MotorNode("C2", "C3", motor.right_in1, motor.right_in2)
-        self.left_node = MotorNode("C0", "C1", motor.left_in1, motor.left_in2)
+        self.left_node = MotorNode("C0", "C1", motor.left_in1, motor.left_in2, motor_invert=True)
         self.head_node = MotorNode("D15", "D16", motor.head_in1, motor.head_in2)
 
     def set_speeds(self, left_rpm, right_rpm, head_rpm):

@@ -198,6 +198,7 @@ class AppController:
                 self.key.clear(i + 1)
                 if i == 0:
                     self.trigger_mission = True
+                    self.chassis.set_speeds(200,200,200)
 
             elif self.key_data[i] == 2:
                 if not self.long_press_keyflag[i]:
