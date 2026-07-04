@@ -1,7 +1,3 @@
-# ============================================================================
-# DRV8871DDAR 电机驱动芯片 — 三轮开环最简底层驱动类
-# ============================================================================
-
 from machine import Pin, PWM
 
 class DRV8871Motor:
@@ -37,7 +33,4 @@ class DRV8871Motor:
     def brake(self):
         self.in1.value(1)
         self.in2.duty_u16(65535)
-
-    def coast(self):
-        self.in1.value(0)
-        self.in2.duty_u16(0)
+        
