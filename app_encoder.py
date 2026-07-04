@@ -1,156 +1,112 @@
-# ============================================================================
-# 编码器电机驱动层 — PID 控制器 + 单电机封装 + 三路底盘管理
-# ============================================================================
+from seekfree import encoder
+from drv8871_simple import DRV8871Motor
 
-import motor
-from smartcar import encoder
-
-
-# ============================================================================
-# 位置式 PID 控制器 (通用)
-# ============================================================================
 class PositionalPID:
-    def __init__(self, kp, ki, kd, out_max=100.0):
-        self.kp = kp              # 比例系数
-        self.ki = ki              # 积分系数
-        self.kd = kd              # 微分系数
-        self.err = 0              # 当前误差
-        self.last_err = 0         # 上一次误差 (用于微分计算)
-        self.integral = 0         # 积分累计
-        self.out = 0              # 最新输出值
-        self.out_max = out_max    # 输出限幅绝对值
+    def __init__(self, kp, ki, kd, out_max=300.0):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.out_max = out_max
+        self.integral = 0.0
+        self.last_err = 0.0
 
-    def calc(self, target, current, dt_ms=10):
-        """
-        计算 PID 输出。
-        target:  目标值
-        current: 当前实际值
-        dt_ms:   距离上次调用的时间间隔 (ms), 默认 10ms
-        返回: PID 输出值, 已限幅到 [-out_max, out_max]
-        """
-        self.err = target - current
-        dt_norm = dt_ms / 10.0              # 归一化时间: 以 10ms 为单位
+    def calc(self, err):
+        derivative = err - self.last_err
+        self.last_err = err
 
-        self.integral += self.err * dt_norm  # 积分累加
+        temp_integral = self.integral + err
+        p_term = self.kp * err
+        i_term = self.ki * temp_integral
+        d_term = self.kd * derivative
+        total_out = p_term + i_term + d_term
 
-        # 积分限幅: 防止积分饱和 (windup)
-        if self.integral > 3000: self.integral = 3000
-        elif self.integral < -3000: self.integral = -3000
+        if abs(total_out) >= self.out_max and (total_out * err > 0):
+            pass
+        else:
+            self.integral = temp_integral
 
-        # 微分项: 误差变化率 (带除零保护)
-        derivative = (self.err - self.last_err) / dt_norm if dt_norm > 0 else 0
+        if self.ki != 0:
+            i_limit = (self.out_max * 0.3) / self.ki
+            self.integral = max(min(self.integral, i_limit), -i_limit)
 
-        # PID 合成
-        self.out = (self.kp * self.err) + \
-                   (self.ki * self.integral) + \
-                   (self.kd * derivative)
+        # 5. 计算最终的闭环输出
+        final_out = p_term + (self.ki * self.integral) + d_term
+        return max(min(final_out, self.out_max), -self.out_max)
 
-        self.last_err = self.err
-
-        # 输出限幅
-        if self.out > self.out_max: self.out = self.out_max
-        elif self.out < -self.out_max: self.out = -self.out_max
-
-        return self.out
+    def reset(self):
+        """复位内部积分与历史误差"""
+        self.integral = 0.0
+        self.last_err = 0.0
 
 
-# ============================================================================
-# 单电机驱动封装 — 含斜坡规划 + 编码器测速 + 速度 PID + 低通滤波
-# ============================================================================
 class MotorNode:
-    def __init__(self, enc_a, enc_b, in1, in2, invert=False, motor_invert=False):
-        # 编码器 (smartcar 库, 自动累加脉冲)
-        self.enc = encoder(enc_a, enc_b, invert)
-        self.in1 = in1              # 电机 IN1 方向引脚 (GPIO)
-        self.in2 = in2              # 电机 IN2 调速引脚 (PWM)
-        self.motor_invert = motor_invert  # 电机方向反转 (硬件接线反了时启用)
-
-        # 速度 PID: 控制实际 RPM 追上目标 RPM
-        self.pid = PositionalPID(kp=0.7, ki=0.02, kd=0, out_max=100)
-
-        # 斜坡控制 (Slew Rate Limiting): 平滑起步, 防止电流冲击
-        self.target_rpm = 0.0               # 外部设定的终极目标速度
-        self.current_target_rpm = 0.0       # PID 当前周期正在追赶的过渡目标速度
-        self.accel_step = 13.0              # 每 10ms 允许的最大 RPM 变化量 (= 1300 RPM/s)
-
-        self.current_rpm = 0.0              # 当前实际转速 (经过低通滤波)
-        self.current_ticks = 0              # 累计编码器脉冲数
+    def __init__(self, in1, in2, enc_id, invert=False, kp=1.6, ki=0.05, kd=0.03, ramp_limit=12.0):
+        self.motor = DRV8871Motor(in1, in2, invert=invert)
+        self.enc = encoder(enc_id)
+        self.pid = PositionalPID(kp, ki, kd, out_max=300.0) # 默认上限设为 300
+        
+        self.invert = invert
+        self.target_speed = 0.0      # 上层下发的目标测速 (单位：脉冲数/10ms)
+        self.current_speed = 0.0     # 校正后的实际测速 (单位：脉冲数/10ms)
+        self.actual_target = 0.0     # 经过斜坡过渡后的实际目标值
+        self.ramp_limit = ramp_limit
 
     def update(self):
         """
-        每 10ms 由 ChassisController.tick() 调用。
-        流程: 斜坡规划 → 编码器测速 → 低通滤波 → 速度 PID → 防抖刹车 → 动力输出
+        核心周期轮询函数 (每 10ms 稳定调用一次)
         """
-        # ---- 1. 目标速度斜坡规划 ----
-        # 将 current_target_rpm 逐步逼近 target_rpm, 限制每步变化不超过 accel_step
-        if self.current_target_rpm < self.target_rpm:
-            self.current_target_rpm += self.accel_step
-            if self.current_target_rpm > self.target_rpm:
-                self.current_target_rpm = self.target_rpm
+        raw_pulses = self.enc.get()
+        self.current_speed = -raw_pulses if self.invert else raw_pulses
 
-        elif self.current_target_rpm > self.target_rpm:
-            self.current_target_rpm -= self.accel_step
-            if self.current_target_rpm < self.target_rpm:
-                self.current_target_rpm = self.target_rpm
-
-        # ---- 2. 编码器测速 ----
-        dticks = self.enc.get()                     # 读取 10ms 内的脉冲增量
-        self.current_ticks += dticks                # 累加总脉冲
-        if self.current_ticks > 950:                # 限幅
-            self.current_ticks = 950
-        elif self.current_ticks < -950:
-            self.current_ticks = -950
-        raw_rpm = dticks * 17.14                    # 脉冲增量 → 瞬时 RPM 换算
-
-        # ---- 3. 低通滤波 (EMA, α=0.15) ----
-        self.current_rpm = self.current_rpm * 0.85 + raw_rpm * 0.15
-
-        # ---- 4. 速度 PID ----
-        power = self.pid.calc(self.current_target_rpm, self.current_rpm)
-
-        # ---- 5. 防抖刹车: 目标为 0 且实际转速 < 5 RPM → 强制硬件刹车 ----
-        if self.target_rpm == 0 and abs(self.current_rpm) < 5:
-            motor.brake(self.in1, self.in2)
-            self.pid.out = 0
-            self.pid.integral = 0
-            self.current_target_rpm = 0             # 清零过渡目标, 准备下次起步
+        if self.target_speed == 0.0 and abs(self.current_speed) < 1.5:
+            self.brake()
             return
 
-        # ---- 6. 动力输出 ----
-        if self.motor_invert:
-            power = -power
-
-        if power >= 0:
-            motor.forward(self.in1, self.in2, power)
+        diff = self.target_speed - self.actual_target
+        if abs(diff) <= self.ramp_limit:
+            self.actual_target = self.target_speed
         else:
-            motor.backward(self.in1, self.in2, abs(power))
+            self.actual_target += self.ramp_limit if diff > 0 else -self.ramp_limit
 
+        error = self.actual_target - self.current_speed
+        power = self.pid.calc(error)
 
-# ============================================================================
-# 三路底盘控制器
-# ============================================================================
+        if power > 0:
+            self.motor.forward(power)
+        elif power < 0:
+            self.motor.backward(abs(power))
+        else:
+            self.motor.brake()
+
+    def brake(self):
+        self.target_speed = 0.0
+        self.actual_target = 0.0
+        self.pid.reset()
+        self.motor.brake()
+
 class ChassisController:
     def __init__(self):
-        # 三个电机节点: 右轮 / 左轮 / 尾轮
-        self.right_node = MotorNode("C2", "C3", motor.right_in1, motor.right_in2)
-        self.left_node = MotorNode("C0", "C1", motor.left_in1, motor.left_in2, motor_invert=True)
-        self.head_node = MotorNode("D15", "D16", motor.head_in1, motor.head_in2)
+        self.left_node = MotorNode("C28", "C29", 0, invert=True)
+        self.right_node = MotorNode("C30", "C31", 1, invert=False)
+        self.head_node = MotorNode("D6", "D7", 2, invert=False)
 
-    def set_speeds(self, left_rpm, right_rpm, head_rpm):
-        """设置三路电机的目标转速 (RPM), 斜坡规划自动平滑过渡"""
-        self.left_node.target_rpm = left_rpm
-        self.right_node.target_rpm = right_rpm
-        self.head_node.target_rpm = head_rpm
-
-    def brake_all(self):
-        """三路同时刹车 (目标转速设 0 + 硬件制动)"""
-        self.set_speeds(0, 0, 0)
-        motor.brake(motor.left_in1, motor.left_in2)
-        motor.brake(motor.right_in1, motor.right_in2)
-        motor.brake(motor.head_in1, motor.head_in2)
+    def set_speeds(self, left, right, head):
+        """
+        设定三个轮子的期望脉冲速度
+        """
+        self.left_node.target_speed = float(left)
+        self.right_node.target_speed = float(right)
+        self.head_node.target_speed = float(head)
 
     def tick(self):
-        """每帧调用: 驱动三路 MotorNode 更新 (测速 + PID + 输出)"""
+        """
+        刷新底盘控制时钟 (由 10ms 定时器回调驱动)
+        """
         self.left_node.update()
         self.right_node.update()
         self.head_node.update()
+
+    def brake_all(self):
+        self.left_node.brake()
+        self.right_node.brake()
+        self.head_node.brake()
