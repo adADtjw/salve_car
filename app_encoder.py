@@ -86,7 +86,7 @@ class DRV8871Motor:
 
 
 class MotorNode:
-    def __init__(self, in1, in2, enc_pin1, enc_pin2, invert=False, kp=1.6, ki=0.05, kd=0.03, ramp_limit=12.0):
+    def __init__(self, in1, in2, enc_pin1, enc_pin2, invert=False, kp=0.2, ki=0.03, kd=0.15, ramp_limit=10.0):
         """
         单路闭环电机节点
         :param in1, in2: DRV8871 控制引脚

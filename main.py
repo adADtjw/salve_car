@@ -16,7 +16,6 @@ from app_uart import Serial, process_received_data
 # ============================================================================
 buzzer = Pin("C18", Pin.OUT)
 led = Pin("C4", Pin.OUT)
-light = Pin("B27", Pin.OUT)
 
 key = KEY_HANDLER(10)
 imu_raw = IMU660RX(imu_type=IMU660RX.TYPE_RC, quar_rate=IMU660RX.RATE_120HZ)
@@ -55,7 +54,6 @@ def main():
 
     start_time = time.ticks_ms()
     init_done = False
-    light.value(1)
 
     lora.send_msg("salve_car ready!")
 
@@ -115,6 +113,12 @@ def main():
 
             # ---- 运动控制 ----
             app.control()
+
+            print("L:{:.1f} R:{:.1f} H:{:.1f} Yaw:{:.1f}".format(
+                app.motor.left_node.current_speed,
+                app.motor.right_node.current_speed,
+                app.motor.head_node.current_speed,
+                yaw))
 
             gc.collect()
 
