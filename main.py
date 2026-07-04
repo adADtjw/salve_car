@@ -25,7 +25,7 @@ imu = Imu660Cal(imu_raw)
 app = AppController(key)
 
 camera = Serial(3, 115200)
-lora = Serial(1, 115200)
+lora = Serial(0, 115200)
 
 # ============================================================================
 # 10ms 定时器
