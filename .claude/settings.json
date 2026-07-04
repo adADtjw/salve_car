@@ -34,7 +34,8 @@
       "Bash(python -m py_compile controller.py)",
       "Bash(python -m py_compile app_encoder.py)",
       "Bash(python -m py_compile app_imu660rx.py)",
-      "Bash(python -m py_compile app_uart.py)"
+      "Bash(python -m py_compile app_uart.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --connect-timeout 10 https://github.com)"
     ],
     "additionalDirectories": [
       "C:\\Users\\13691\\.ssh"

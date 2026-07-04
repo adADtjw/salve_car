@@ -253,16 +253,12 @@ class AppController:
                 # ---- 单击按键 1 (KEY1) ----
                 if i == 0:
                     self.trigger_mission = True
-                    self.move_mode = 'MANUAL_DUTY'
-                    # 【协同控制】：左轮正转、右轮反转、头轮反转 (原地顺时针旋转，合力方向一致，绝不卡死)
-                    # 设定 40% 的中等目标占空比
-                    self.target_duties = [40.0, -40.0, -40.0]
+                    self.motor.set_speeds(20,20,20)
                     
                 # ---- 单击按键 2 (KEY2) ----
                 elif i == 1:
                     self.move_mode = 'MANUAL_DUTY'
-                    # 【协同控制】：左轮反转、右轮正转、头轮正转 (原地逆时针旋转，不发生机械互掐)
-                    self.target_duties = [-40.0, 40.0, 40.0]
+                    
 
             elif self.key_data[i] == 2:
                 if not self.long_press_keyflag[i]:
