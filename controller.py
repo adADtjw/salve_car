@@ -21,7 +21,7 @@ class AppController:
         self.long_press_action = None
 
         # 底盘 (三路电机 + 编码器)
-        self.chassis = app_encoder.ChassisController()
+        self.motor = app_encoder.MotorController()
 
         # ---- PID 控制器 (3个) ----
         self.yaw_pid = app_encoder.PositionalPID(kp=6.0, ki=0.0, kd=0.0, out_max=120.0)
@@ -91,7 +91,7 @@ class AppController:
             elif error < -180.0: error += 360.0
 
             if abs(error) <= 1.0:
-                self.chassis.brake_all()
+                self.motor.brake_all()
                 self.turn_count += 1
                 if self.turn_count >= 15:
                     self.is_turning = False
@@ -105,7 +105,7 @@ class AppController:
             if spin_rpm > 200.0: spin_rpm = 200.0
             elif spin_rpm < -200.0: spin_rpm = -200.0
 
-            self.chassis.set_speeds(spin_rpm, -spin_rpm, -spin_rpm)
+            self.motor.set_speeds(spin_rpm, -spin_rpm, -spin_rpm)
 
     # ================================================================
     # 直线循迹 — 陀螺仪 yaw 反馈差速纠偏
@@ -126,7 +126,7 @@ class AppController:
         right_rpm = base_rpm - spin_rpm
         head_rpm = 0.0 - spin_rpm
 
-        self.chassis.set_speeds(left_rpm, right_rpm, head_rpm)
+        self.motor.set_speeds(left_rpm, right_rpm, head_rpm)
 
     # ================================================================
     # 自由平移
@@ -147,7 +147,7 @@ class AppController:
         self.move_mode = 'IDLE'
         self.vx = 0.0
         self.vy = 0.0
-        self.chassis.brake_all()
+        self.motor.brake_all()
         # 清除占空比缓存
         self.target_duties = [0.0, 0.0, 0.0]
         self.current_duties = [0.0, 0.0, 0.0]
@@ -196,7 +196,7 @@ class AppController:
         else:
             v_tail = 0.0
 
-        self.chassis.set_speeds(v_left, v_right, v_tail)
+        self.motor.set_speeds(v_left, v_right, v_tail)
 
     # ================================================================
     # 开环直接占空比底层驱动方法 (绕过 PID 控制器，带防寄存器重写机制)
@@ -290,9 +290,9 @@ class AppController:
                     self.current_duties[idx] += self.duty_step if diff > 0 else -self.duty_step
 
             # ---- 2. 写入底层电机驱动 ----
-            self.set_motor_duty(0, self.chassis.left_node, self.current_duties[0])
-            self.set_motor_duty(1, self.chassis.right_node, self.current_duties[1])
-            self.set_motor_duty(2, self.chassis.head_node, self.current_duties[2])
+            self.set_motor_duty(0, self.motor.left_node, self.current_duties[0])
+            self.set_motor_duty(1, self.motor.right_node, self.current_duties[1])
+            self.set_motor_duty(2, self.motor.head_node, self.current_duties[2])
         else:
             if self.is_turning and self.move_mode == 'IDLE':
                 self.turn_to_angle(self.current_yaw)
@@ -302,4 +302,4 @@ class AppController:
                 self.update_kinematics(self.current_yaw)
 
             # 驱动原本的闭环 PID 控制 tick
-            self.chassis.tick()
+            self.motor.tick()

@@ -39,9 +39,9 @@ def timer_callback_10ms(timer):
 
 
 pit1 = ticker(0)
-pit1.capture_list(key, app.chassis.left_node.enc,
-                  app.chassis.right_node.enc,
-                  app.chassis.head_node.enc)
+pit1.capture_list(key, app.motor.left_node.enc,
+                  app.motor.right_node.enc,
+                  app.motor.head_node.enc)
 pit1.callback(timer_callback_10ms)
 pit1.start(10)
 

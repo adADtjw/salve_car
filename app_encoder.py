@@ -97,7 +97,7 @@ class MotorNode:
         # 初始化电机驱动和编码器，并将极性反转直接交由底层接管
         self.motor = DRV8871Motor(in1, in2, invert=invert)
         self.enc = encoder(enc_pin1, enc_pin2, invert)
-        self.pid = PositionalPID(kp, ki, kd, out_max=300.0)
+        self.pid = PositionalPID(kp, ki, kd, out_max=100.0)
         
         # 暴露给 controller.py 在直接占空比模式 (MANUAL_DUTY) 中使用的属性映射
         self.in1 = self.motor.in1
