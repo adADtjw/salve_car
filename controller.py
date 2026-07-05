@@ -35,7 +35,7 @@ class AppController:
         self.turn_ok = False
         self.turn_count = 0
         self.is_tracking = False
-        self.move_mode = 'IDLE'           # IDLE / FREE / MANUAL / MANUAL_DUTY / SPEED_HOLD
+        self.move_mode = 'IDLE'           # IDLE / FREE / MANUAL / MANUAL_DUTY (开环直接占空比模式)
 
         # ---- 开环占空比与斜坡控制 ----
         self.target_duties = [0.0, 0.0, 0.0]  # 目标占空比 [左, 右, 头] (-100.0 ~ 100.0)
@@ -156,9 +156,6 @@ class AppController:
     # ================================================================
     # 运动学解算 — vx/vy → 三轮 RPM
     # ================================================================
-    # ================================================================
-    # 运动学解算 — Vcx/Vcy/Vz → 三轮 RPM (严格遵循逐飞科技矩阵模型)
-    # ================================================================
     def update_kinematics(self, current_yaw):
         if self.move_mode == 'IDLE' or self.move_mode == 'MANUAL' or self.move_mode == 'MANUAL_DUTY':
             return
@@ -174,46 +171,31 @@ class AppController:
                 self.action_start_time = time.ticks_ms()
             return
 
-        # ---- 1. 计算自旋补偿速度 (Vz) ----
         # yaw 闭环纠偏
         error = self.target_yaw - current_yaw
         error = _norm(error)
 
-        Vz = self.free_pid.calc(error, 0.0)
-        # 限幅保护
-        if Vz > 300.0: Vz = 300.0
-        elif Vz < -300.0: Vz = -300.0
+        pid_spin = self.free_pid.calc(error, 0.0)
+        if pid_spin > 300.0: pid_spin = 300.0
+        elif pid_spin < -300.0: pid_spin = -300.0
 
-        # ---- 2. 获取目标平移速度 (Vcx, Vcy) ----
-        # 对应图解中的 Vcx 和 Vcy
-        Vcx = self.vx
-        Vcy = self.vy
+        # 全向轮运动学: 三轮 120° 分布
+        SQRT3_2 = 0.866025
+        base_tail = self.vx * 1.0 + self.vy * 0.0
+        base_right = self.vx * -0.5 + self.vy * SQRT3_2
+        base_left = self.vx * 0.5 + self.vy * SQRT3_2
 
-        # ---- 3. 矢量分解运动学矩阵算式 (对应图1) ----
-        # 预计算常数系数以提高运算速度
-        SQRT3_3 = 0.577350    # √3 / 3
-        ONE_THIRD = 0.333333  # 1 / 3
+        # 前轮差速纠偏 + 尾轮让权
+        v_right = base_right - pid_spin
+        v_left = base_left + pid_spin
 
-        # 公式: Vl = 1/3*Vcx + √3/3*Vcy + 1/3*Vz
-        v_left = (ONE_THIRD * Vcx) + (SQRT3_3 * Vcy) + (ONE_THIRD * Vz)
-        
-        # 公式: Vr = 1/3*Vcx - √3/3*Vcy + 1/3*Vz
-        v_right = (ONE_THIRD * Vcx) - (SQRT3_3 * Vcy) + (ONE_THIRD * Vz)
-        
-        # 公式: Vm = -2/3*Vcx + 1/3*Vz
-        v_tail = -(2.0 / 3.0 * Vcx) + (ONE_THIRD * Vz)
+        if base_tail > 0:
+            v_tail = max(0, base_tail)
+        elif base_tail < 0:
+            v_tail = min(0, base_tail)
+        else:
+            v_tail = 0.0
 
-        # ---- 4. 尾轮让权逻辑 (可选，根据原代码保留) ----
-        # 原代码中有一段尾轮单向输出的让权逻辑，如果你希望严格遵循全向移动，
-        # 直接输出 v_tail 即可。如果需要尾轮不干涉某些特定动作，可以取消下方注释。
-        # if Vcx > 0:
-        #     v_tail = max(0, v_tail)
-        # elif Vcx < 0:
-        #     v_tail = min(0, v_tail)
-        # else:
-        #     v_tail = ONE_THIRD * Vz
-
-        # 下发至底层电机节点 (这里的 head_node 实际上对应的是模型中的 Vm 尾轮)
         self.motor.set_speeds(v_left, v_right, v_tail)
 
     # ================================================================
@@ -268,12 +250,11 @@ class AppController:
             if self.key_data[i] == 1:
                 self.key.clear(i + 1)
                 
-                # ---- 单击按键 1 (KEY1): 三轮回声保持 20 转速 ----
+                # ---- 单击按键 1 (KEY1) ----
                 if i == 0:
                     self.trigger_mission = True
-                    self.move_mode = 'SPEED_HOLD'
-                    self.motor.set_speeds(80, 80, 80)
-                    print("KEY1: SPEED_HOLD 80,80,80")
+                    self.motor.set_speeds(400,400,400)
+                    print("run!")
                     
                 # ---- 单击按键 2 (KEY2) ----
                 elif i == 1:
@@ -309,9 +290,6 @@ class AppController:
             self.set_motor_duty(0, self.motor.left_node, self.current_duties[0])
             self.set_motor_duty(1, self.motor.right_node, self.current_duties[1])
             self.set_motor_duty(2, self.motor.head_node, self.current_duties[2])
-        elif self.move_mode == 'SPEED_HOLD':
-            # 恒定转速保持模式: 只跑 PID 闭环，不做运动学解算
-            self.motor.tick()
         else:
             if self.is_turning and self.move_mode == 'IDLE':
                 self.turn_to_angle(self.current_yaw)
