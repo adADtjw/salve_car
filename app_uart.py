@@ -22,6 +22,28 @@ class Serial:
                 except UnicodeError:
                     return None
         return None
+    
+    def send_motor_status(self, app):
+        """专门用于发送电机的目标编码器速度(T)和真实反馈速度(R)"""
+        tl = app.motor.left_node.target_speed
+        rl = app.motor.left_node.current_speed
+        tr = app.motor.right_node.target_speed
+        rr = app.motor.right_node.current_speed
+        th = app.motor.head_node.target_speed
+        rh = app.motor.head_node.current_speed
+
+        # 获取当前的测试模式状态，兼容单轮测试(-1代表全向正常模式)
+        test_idx = getattr(app, 'test_motor_idx', -1)
+
+        if test_idx == 0:
+            self.send_msg("{:.0f}, {:.0f}".format(tl, rl))
+        elif test_idx == 1:
+            self.send_msg("{:.0f}, {:.0f}".format(tr, rr))
+        elif test_idx == 2:
+            self.send_msg("{:.0f}, {:.0f}".format(th, rh))
+        else:
+            # 紧凑格式发送三个轮子的数据，防止单包数据过长
+            self.send_msg("L(T{:.0f} R{:.0f}) R(T{:.0f} R{:.0f}) H(T{:.0f} R{:.0f})".format(tl, rl, tr, rr, th, rh))
 
 
 def process_received_data(data_str, app):

@@ -90,16 +90,6 @@ def main():
             # ---- 按键处理 ----
             app.keyprocess(yaw)
 
-            if app.trigger_mission:
-                app.trigger_mission = False
-                buzzer_timer = 10
-                # 用户可在 KEY0 短按时自定义行为
-
-            if app.long_press_action is not None:
-                camera.send_msg(app.long_press_action)
-                lora.send_msg("KEY:" + app.long_press_action)
-                app.long_press_action = None
-
             # ---- 串口指令 ----
             cam_data = camera.read_msg()
             if cam_data:
@@ -114,13 +104,19 @@ def main():
             # ---- 运动控制 ----
             app.control()
 
-            print("L:{:.1f} R:{:.1f} H:{:.1f} Yaw:{:.1f}".format(
-                app.motor.left_node.current_speed,
-                app.motor.right_node.current_speed,
-                app.motor.head_node.current_speed,
-                yaw))
+            # led_tick 是每 10ms 加 1，范围 0-199。
+            # 我们让它每 100ms (tick是10的倍数) 打印一次，每 2秒 (tick为0) 回收一次内存
+            if led_tick % 10 == 0:
+                # print("L:{:.1f} R:{:.1f} H:{:.1f} Yaw:{:.1f}".format(
+                #     app.motor.left_node.current_speed,
+                #     app.motor.right_node.current_speed,
+                #     app.motor.head_node.current_speed,
+                #     yaw))
+                lora.send_motor_status(app)
 
-            gc.collect()
+            if led_tick == 0:
+                gc.collect()
+                
 
 
 if __name__ == '__main__':

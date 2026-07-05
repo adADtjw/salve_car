@@ -56,7 +56,7 @@ class DRV8871Motor:
 
     def _write_forward(self, speed):
         self.in1.value(1)
-        duty_ratio = speed / 100.0
+        duty_ratio = (100.0 - speed) / 100.0
         duty_u16 = int(65535 * duty_ratio)
         self.in2.duty_u16(max(duty_u16, 1))
 
@@ -136,7 +136,7 @@ class MotorController:
         self.head_node = MotorNode("D6", "D7", "D15", "D16", invert=False)
 
         # 核心映射基准：100% 占空比对应的物理脉冲数极速
-        self.MAX_SPEED_PULSE = 5700.0 
+        self.MAX_SPEED_PULSE = 4000.0 
 
     def set_speeds(self, left_duty, right_duty, head_duty):
         """
