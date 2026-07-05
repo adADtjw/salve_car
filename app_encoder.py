@@ -1,5 +1,5 @@
 # ============================================================================
-# 闭环电机控制器 — 包含 Clamping 抗饱和 PID、斜坡规划及多轮极性同步校正
+# 闭环电机控制器 — 包含 滤波、Clamping 抗饱和 PID、斜坡规划及极性同步校正
 # ============================================================================
 
 from smartcar import encoder
@@ -8,20 +8,24 @@ from machine import Pin, PWM
 class PositionalPID:
     def __init__(self, kp, ki, kd, out_max=100.0):
         """
-        位置式 PID 控制器 (采用 Clamping 动态钳位抗饱和算法)
-        out_max 默认为 100.0，因为最终输出直接是 0-100 的占空比百分比
+        位置式 PID 控制器 (采用 Clamping 动态钳位抗饱和算法 + 测量值微分)
         """
         self.kp = kp
         self.ki = ki
         self.kd = kd
         self.out_max = out_max
         self.integral = 0.0
-        self.last_err = 0.0
+        
+        # 优化：弃用 last_err，改用 last_speed，消除目标突变带来的微分突刺
+        self.last_speed = 0.0 
 
-    def calc(self, err):
-        # 1. 计算微分项
-        derivative = err - self.last_err
-        self.last_err = err
+    def calc(self, current_speed, target_speed):
+        err = target_speed - current_speed
+
+        # 1. 优化微分项：基于测量值的微分 (Derivative on Measurement)
+        # 这可以避免斜坡规划或目标速度突变时产生的巨大 D 项突刺，对缓解电机抖动有奇效
+        derivative = -(current_speed - self.last_speed)
+        self.last_speed = current_speed
 
         # 2. 计算临时积分与输出
         temp_integral = self.integral + err
@@ -36,9 +40,9 @@ class PositionalPID:
         else:
             self.integral = temp_integral
 
-        # 4. 绝对积分限幅
+        # 4. 绝对积分限幅 (防止卡死时积分无限制增加)
         if self.ki != 0:
-            i_limit = (self.out_max * 0.3) / self.ki
+            i_limit = (self.out_max * 0.4) / self.ki
             self.integral = max(min(self.integral, i_limit), -i_limit)
 
         final_out = p_term + (self.ki * self.integral) + d_term
@@ -46,7 +50,8 @@ class PositionalPID:
 
     def reset(self):
         self.integral = 0.0
-        self.last_err = 0.0
+        self.last_speed = 0.0
+
 
 class DRV8871Motor:
     def __init__(self, in1_pin_name, in2_pin_name, freq=13000, invert=False):
@@ -62,7 +67,6 @@ class DRV8871Motor:
 
     def _write_backward(self, speed):
         self.in1.value(0)
-        # 闭环中绝对禁止使用 sqrt 等非线性扭曲，纯线性交给 PID 去克服死区
         duty_ratio = speed / 100.0
         duty_u16 = int(65535 * duty_ratio)
         self.in2.duty_u16(max(duty_u16, 1))
@@ -83,11 +87,8 @@ class DRV8871Motor:
         self.in1.value(1)
         self.in2.duty_u16(65535)
 
+
 class MotorNode:
-    # 针对 5700 极速重新调整的参数：
-    # Kp=0.03 (1000脉冲误差产生30%驱动力)
-    # Ki=0.002 (积分克服反转死区)
-    # ramp_limit=200.0 (约 300ms 加速到极速 5700，防止瞬间电流过大拉跨电源)
     def __init__(self, in1, in2, enc_pin1, enc_pin2, invert=False, kp=0.03, ki=0.002, kd=0.01, ramp_limit=200.0):
         self.motor = DRV8871Motor(in1, in2, invert=invert)
         self.enc = encoder(enc_pin1, enc_pin2, invert)
@@ -99,7 +100,9 @@ class MotorNode:
         self.ramp_limit = ramp_limit
 
     def update(self):
-        self.current_speed = self.enc.get()
+        raw_speed = self.enc.get()
+        alpha = 0.35 
+        self.current_speed = (1.0 - alpha) * self.current_speed + alpha * raw_speed
 
         if self.target_speed == 0.0 and abs(self.current_speed) < 5.0:
             self.brake()
@@ -112,9 +115,17 @@ class MotorNode:
         else:
             self.actual_target += self.ramp_limit if diff > 0 else -self.ramp_limit
 
-        # PID 计算，输出 0-100 的实际物理占空比
-        error = self.actual_target - self.current_speed
-        power = self.pid.calc(error)
+        # ==================== 新增：前馈控制 (Feedforward) ====================
+        # 假设最高速度是 4000 脉冲，对应 100% 占空比，那么前馈系数 Kf 就是 100 / 4000 = 0.025
+        Kf = 0.025
+        feedforward_power = self.actual_target * Kf
+        
+        # PID 现在只需要负责纠正“前馈猜不准”的那一点点误差
+        pid_power = self.pid.calc(self.current_speed, self.actual_target)
+        
+        # 最终输出 = 前馈基础出力 + PID 微调
+        power = feedforward_power + pid_power
+        # ======================================================================
 
         if power > 0:
             self.motor.forward(power)
@@ -129,6 +140,7 @@ class MotorNode:
         self.pid.reset()
         self.motor.brake()
 
+
 class MotorController:
     def __init__(self):
         self.left_node = MotorNode("C28", "C29", "C0", "C1", invert=True)
@@ -139,9 +151,6 @@ class MotorController:
         self.MAX_SPEED_PULSE = 4000.0 
 
     def set_speeds(self, left_duty, right_duty, head_duty):
-        """
-        上层接口：接收 -100.0 到 100.0 的占空比意图
-        """
         # 限制输入范围在合法百分比内
         left_duty = max(min(float(left_duty), 100.0), -100.0)
         right_duty = max(min(float(right_duty), 100.0), -100.0)

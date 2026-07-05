@@ -54,6 +54,9 @@ def main():
 
     start_time = time.ticks_ms()
     init_done = False
+    
+    # 垃圾回收计时器
+    gc_timer = time.ticks_ms()
 
     lora.send_msg("salve_car ready!")
 
@@ -61,6 +64,7 @@ def main():
     led_tick = 0
 
     while True:
+        # 当 10ms 标志位置起时，严格执行高优先级控制逻辑
         if ticker_flag:
             ticker_flag = False
 
@@ -101,22 +105,21 @@ def main():
                 if result:
                     lora.send_msg("OK")
 
-            # ---- 运动控制 ----
+            # ---- 运动控制核心环节 ----
             app.control()
 
-            # led_tick 是每 10ms 加 1，范围 0-199。
-            # 我们让它每 100ms (tick是10的倍数) 打印一次，每 2秒 (tick为0) 回收一次内存
+            # 每 100ms 打印/发送一次状态，避免阻塞 10ms 核心循环
             if led_tick % 10 == 0:
-                # print("L:{:.1f} R:{:.1f} H:{:.1f} Yaw:{:.1f}".format(
-                #     app.motor.left_node.current_speed,
-                #     app.motor.right_node.current_speed,
-                #     app.motor.head_node.current_speed,
-                #     yaw))
                 lora.send_motor_status(app)
-
-            if led_tick == 0:
-                gc.collect()
                 
+        # =====================================================
+        # 空闲时段：执行耗时的垃圾回收操作，防止拖累 10ms 控制循环
+        # =====================================================
+        else:
+            now = time.ticks_ms()
+            if time.ticks_diff(now, gc_timer) >= 2000:
+                gc.collect()
+                gc_timer = now
 
 
 if __name__ == '__main__':
