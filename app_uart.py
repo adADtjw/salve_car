@@ -59,68 +59,61 @@ def process_received_data(data_str, app):
             key = key_part.strip().upper()
             value_str = value_str.strip()
 
-            # FREE: 自由平移 (速度,角度)
-            if key == "FREE":
+            # ==========================================================
+            # 1. 动态调节电机速度环 PID 参数
+            # 格式: PID:轮子,Kp,Ki,Kd
+            # 例子: PID:ALL,0.03,0.002,0.01 (全部轮子设置)
+            #       PID:L,0.05,0.001,0.02   (仅设置左轮)
+            # ==========================================================
+            if key == "PID":
                 parts = value_str.split(",")
-                if len(parts) == 2:
-                    speed = float(parts[0])
-                    angle = float(parts[1])
-                    app.set_free_move(
-                        current_yaw=app.current_yaw,
-                        speed=speed,
-                        angle_deg=angle,
-                        relative_heading=0.0
-                    )
+                if len(parts) == 4:
+                    target = parts[0].strip().upper()
+                    kp = float(parts[1])
+                    ki = float(parts[2])
+                    kd = float(parts[3])
+                    
+                    nodes = []
+                    if target == "L": nodes.append(app.motor.left_node)
+                    elif target == "R": nodes.append(app.motor.right_node)
+                    elif target == "H": nodes.append(app.motor.head_node)
+                    elif target == "ALL": nodes = [app.motor.left_node, app.motor.right_node, app.motor.head_node]
+                    
+                    for node in nodes:
+                        node.pid.kp = kp
+                        node.pid.ki = ki
+                        node.pid.kd = kd
+                        node.pid.reset()  # 更改参数后清空积分项，防止系统出现突然猛转的冲击
+                        
                     return True
 
-            # TURN: 原地转向 (相对角度)
-            elif key == "TURN":
-                ang_val = float(value_str)
-                app.move_mode = 'IDLE'
-                app.is_tracking = False
-                app.chassis.brake_all()
-                app.turn_to_angle(current_yaw=app.current_yaw, relative_angle=ang_val)
-                return True
-
-            # TRACK: 直线循迹开关 (1=开, 0=关)
-            elif key == "TRACK":
-                val = int(value_str)
-                if val == 1:
-                    app.move_mode = 'IDLE'
-                    app.is_tracking = True
-                    app.chassis.brake_all()
-                else:
-                    app.is_tracking = False
-                    app.chassis.brake_all()
-                return True
-
-            # SET: 参数热更新 (变量名=值)
-            elif key == "SET":
-                pairs = value_str.split(",")
-                changed = False
-                for pair in pairs:
-                    if "=" in pair:
-                        attr_name, attr_val = pair.split("=")
-                        attr_name = attr_name.strip().lower()
-                        try:
-                            val = float(attr_val.strip())
-                            if hasattr(app, attr_name):
-                                original = getattr(app, attr_name)
-                                if isinstance(original, (int, float)):
-                                    setattr(app, attr_name, val)
-                                    changed = True
-                        except ValueError:
-                            continue
-                return changed
+            # ==========================================================
+            # 2. 独立电机阶跃测速 (用于观察 PID 曲线)
+            # 格式: SPD:轮子,占空比
+            # 例子: SPD:L,50 (给左轮50%的占空比意图)
+            #       SPD:ALL,30 (三个轮子同时30%)
+            # ==========================================================
+            elif key == "SPD":
+                parts = value_str.split(",")
+                if len(parts) == 2:
+                    target = parts[0].strip().upper()
+                    duty = float(parts[1])
+                    
+                    app.serial_debug = True   # 进入串口独立调试模式
+                    app.is_testing = False    # 挂起按键测试模式
+                    
+                    if target == "L": app.serial_duties[0] = duty
+                    elif target == "R": app.serial_duties[1] = duty
+                    elif target == "H": app.serial_duties[2] = duty
+                    elif target == "ALL": app.serial_duties = [duty, duty, duty]
+                    return True
 
         except Exception:
             return False
 
-    # STOP: 紧急刹车
     if data_str.upper() == "STOP":
-        app.move_mode = 'IDLE'
-        app.is_tracking = False
-        app.chassis.brake_all()
+        if hasattr(app, 'set_brake'):
+            app.set_brake()
         return True
 
     return False
